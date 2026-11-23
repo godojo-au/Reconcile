@@ -1,6 +1,8 @@
 import argparse
 import csv
 import json
+import os
+import urllib.request
 from pathlib import Path
 
 
@@ -48,14 +50,46 @@ def compare(before, after, key="id"):
     }
 
 
+def explain_report(report, provider, model=None):
+    chosen_model = model or ("gpt-4o-mini" if provider == "openai" else "llama3.2")
+    body = {
+        "model": chosen_model,
+        "messages": [
+            {"role": "system", "content": "Summarize this CSV comparison for a human reviewer in at most 120 words. Use only the JSON report. Mention duplicate warnings. Do not invent causes or say records were fixed."},
+            {"role": "user", "content": json.dumps(report)},
+        ],
+    }
+    if provider == "openai":
+        key = os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("Set OPENAI_API_KEY before using --explain openai")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    elif provider == "ollama":
+        body["stream"] = False
+        url = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/") + "/api/chat"
+        headers = {"Content-Type": "application/json"}
+    else:
+        raise ValueError("Unsupported model provider")
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        result = json.load(response)
+    return (result["choices"][0]["message"]["content"] if provider == "openai" else result["message"]["content"]).strip()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compare two CSV exports by a stable record key")
     parser.add_argument("before")
     parser.add_argument("after")
     parser.add_argument("--key", default="id")
     parser.add_argument("--output", default="reconciliation.json")
+    parser.add_argument("--explain", choices=("openai", "ollama"), help="Add a model-written summary of the report")
+    parser.add_argument("--model", help="Override the provider's default model")
     args = parser.parse_args()
     report = compare(args.before, args.after, args.key)
+    if args.explain:
+        report["model_summary"] = explain_report(report, args.explain, args.model)
+        report["model_summary_status"] = "draft_for_review"
     Path(args.output).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Added: {report['counts']['added']}, removed: {report['counts']['removed']}, changed: {report['counts']['changed']}")
     if report["skipped_duplicate_keys"]:
