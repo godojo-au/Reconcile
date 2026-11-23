@@ -30,19 +30,21 @@ def compare(before, after, key="id"):
     if before_columns != after_columns:
         raise ValueError("Both CSV files must have the same columns in the same order")
     fields = [column for column in before_columns if column != key]
+    uncertain = set(old_duplicates) | set(new_duplicates)
     changed = []
-    for identifier in sorted(old.keys() & new.keys()):
+    for identifier in sorted((old.keys() & new.keys()) - uncertain):
         differences = {field: {"before": old[identifier][field], "after": new[identifier][field]}
                        for field in fields if old[identifier][field] != new[identifier][field]}
         if differences:
             changed.append({key: identifier, "fields": differences})
     return {
         "key": key,
-        "added": sorted(new.keys() - old.keys()),
-        "removed": sorted(old.keys() - new.keys()),
+        "added": sorted((new.keys() - old.keys()) - uncertain),
+        "removed": sorted((old.keys() - new.keys()) - uncertain),
         "changed": changed,
         "duplicate_keys": {"before": old_duplicates, "after": new_duplicates},
-        "counts": {"added": len(new.keys() - old.keys()), "removed": len(old.keys() - new.keys()), "changed": len(changed)},
+        "skipped_duplicate_keys": sorted(uncertain),
+        "counts": {"added": len((new.keys() - old.keys()) - uncertain), "removed": len((old.keys() - new.keys()) - uncertain), "changed": len(changed)},
     }
 
 
@@ -56,6 +58,8 @@ def main():
     report = compare(args.before, args.after, args.key)
     Path(args.output).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Added: {report['counts']['added']}, removed: {report['counts']['removed']}, changed: {report['counts']['changed']}")
+    if report["skipped_duplicate_keys"]:
+        print(f"Review duplicate IDs before relying on the report: {', '.join(report['skipped_duplicate_keys'])}")
     print(f"Review report: {args.output}")
 
 

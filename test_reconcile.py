@@ -20,6 +20,8 @@ class ReconcileTests(unittest.TestCase):
             path.write_text("id,status\n1,open\n1,closed\n")
             report = compare(path, path)
             self.assertEqual(report["duplicate_keys"]["before"], ["1"])
+            self.assertEqual(report["skipped_duplicate_keys"], ["1"])
+            self.assertEqual(report["changed"], [])
 
 
 if __name__ == "__main__":
