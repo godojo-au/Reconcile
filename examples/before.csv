@@ -1,0 +1,4 @@
+id,owner,status,amount
+R-01,Ada,pending,100
+R-02,Sam,open,50
+R-03,Lee,closed,75
